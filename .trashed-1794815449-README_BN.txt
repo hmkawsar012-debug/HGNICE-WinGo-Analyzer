@@ -1,0 +1,11 @@
+HGNICE Predictor — Android Studio project
+
+গুরুত্বপূর্ণ:
+- এই ZIP-এ Android অ্যাপের সোর্স প্রজেক্ট আছে; তৈরি করা APK ফাইল নেই।
+- APK তৈরি করতে Android Studio-তে এই ফোল্ডারটি Open করুন।
+- Gradle sync সম্পন্ন হলে: Build > Build Bundle(s) / APK(s) > Build APK(s)
+- APK সাধারণত app/build/outputs/apk/debug/app-debug.apk এ তৈরি হবে।
+- প্রথমবার Android SDK ও Gradle dependencies ডাউনলোড করতে ইন্টারনেট লাগতে পারে।
+
+অ্যাপটি আগের ফলাফলের ইতিহাস থেকে পরীক্ষামূলক Big/Small ও সংখ্যা অনুমান করে।
+এটি হ্যাক নয় এবং পরবর্তী ফলাফল নিশ্চিতভাবে বলতে পারে না।
