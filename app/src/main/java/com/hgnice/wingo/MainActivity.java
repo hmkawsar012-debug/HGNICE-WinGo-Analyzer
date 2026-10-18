@@ -1,3 +1,4 @@
+
 package com.hgnice.wingo;
 
 import android.app.Activity;
@@ -6,158 +7,114 @@ import android.graphics.Color;
 import android.view.Gravity;
 import android.widget.*;
 import java.util.ArrayList;
-import java.util.Locale;
 
 public class MainActivity extends Activity {
+    ArrayList<String> results = new ArrayList<>();
+    LinearLayout page;
+    EditText entry;
+    TextView counts, guess, history;
 
-    private final ArrayList<String> history = new ArrayList<>();
-    private LinearLayout layout;
-    private EditText input;
-    private TextView stats, prediction, historyText;
+    public void onCreate(Bundle b) {
+        super.onCreate(b);
+        page = new LinearLayout(this);
+        page.setOrientation(1);
+        page.setPadding(20, 20, 20, 20);
+        page.setBackgroundColor(Color.WHITE);
 
-    @Override
-    public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        showApp();
-    }
-
-    private TextView makeText(String text, int size) {
-        TextView t = new TextView(this);
-        t.setText(text);
-        t.setTextSize(size);
-        t.setTextColor(Color.BLACK);
-        t.setPadding(8, 12, 8, 12);
-        return t;
-    }
-
-    private void showApp() {
-        ScrollView scroll = new ScrollView(this);
-        layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(18, 20, 18, 20);
-        layout.setBackgroundColor(Color.WHITE);
-        scroll.addView(layout);
-        setContentView(scroll);
-
-        TextView title = makeText("HGNICE WinGo Analyzer", 24);
+        TextView title = new TextView(this);
+        title.setText("HGNICE WinGo Analyzer");
+        title.setTextSize(24);
+        title.setTextColor(Color.BLACK);
         title.setGravity(Gravity.CENTER);
-        layout.addView(title);
+        page.addView(title);
 
-        input = new EditText(this);
-        input.setSingleLine(true);
-        input.setHint("Enter Big or Small");
-        layout.addView(input);
+        entry = new EditText(this);
+        entry.setHint("Enter Big or Small");
+        page.addView(entry);
 
         Button add = new Button(this);
         add.setText("ADD RESULT");
-        layout.addView(add);
-        add.setOnClickListener(v -> addResult());
-
-        Button undo = new Button(this);
-        undo.setText("UNDO LAST");
-        layout.addView(undo);
-        undo.setOnClickListener(v -> {
-            if (!history.isEmpty()) {
-                history.remove(history.size() - 1);
-                update();
+        page.addView(add);
+        add.setOnClickListener(v -> {
+            String s = entry.getText().toString().trim();
+            if (s.equalsIgnoreCase("Big") ||
+                s.equalsIgnoreCase("Small")) {
+                results.add(s.substring(0,1).toUpperCase()
+                    + s.substring(1).toLowerCase());
+                entry.setText("");
+                refresh();
+            } else {
+                entry.setError("Big অথবা Small লিখুন");
             }
         });
 
-        Button clear = new Button(this);
-        clear.setText("CLEAR ALL");
-        layout.addView(clear);
-        clear.setOnClickListener(v -> new android.app.AlertDialog.Builder(this)
-            .setTitle("Clear all results?")
-            .setMessage("সব ফলাফল মুছে ফেলবে?")
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Clear", (d, w) -> {
-                history.clear();
-                update();
-            }).show());
+        Button undo = new Button(this);
+        undo.setText("UNDO LAST");
+        page.addView(undo);
+        undo.setOnClickListener(v -> {
+            if (!results.isEmpty()) {
+                results.remove(results.size()-1);
+                refresh();
+            }
+        });
 
-        stats = makeText("", 17);
-        layout.addView(stats);
+        counts = new TextView(this);
+        counts.setTextColor(Color.BLACK);
+        counts.setTextSize(18);
+        page.addView(counts);
 
-        prediction = makeText("", 20);
-        layout.addView(prediction);
+        guess = new TextView(this);
+        guess.setTextColor(Color.BLUE);
+        guess.setTextSize(22);
+        guess.setPadding(0,20,0,20);
+        page.addView(guess);
 
-        historyText = makeText("", 16);
-        layout.addView(historyText);
+        history = new TextView(this);
+        history.setTextColor(Color.DKGRAY);
+        history.setTextSize(16);
+        page.addView(history);
 
-        update();
+        setContentView(page);
+        refresh();
     }
 
-    private void addResult() {
-        String value = input.getText().toString()
-            .trim().toLowerCase(Locale.ROOT);
-
-        if (value.equals("big")) {
-            history.add("Big");
-        } else if (value.equals("small")) {
-            history.add("Small");
-        } else {
-            Toast.makeText(this,
-                "Big অথবা Small লিখুন", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        input.setText("");
-        update();
-    }
-
-    private void update() {
-        int big = 0, small = 0;
-        for (String s : history) {
-            if (s.equals("Big")) big++;
+    void refresh() {
+        int big=0, small=0;
+        for(String s:results) {
+            if(s.equals("Big")) big++;
             else small++;
         }
+        counts.setText("Total: "+results.size()
+            + "\nBig: "+big+"\nSmall: "+small);
 
-        stats.setText("Total: " + history.size()
-            + "\nBig: " + big
-            + "\nSmall: " + small);
-
-        if (history.isEmpty()) {
-            prediction.setText(
-                "পরবর্তী ধারণা: ফলাফল যোগ করুন");
+        if(results.isEmpty()) {
+            guess.setText("পরবর্তী ধারণা: ফলাফল যোগ করুন");
         } else {
-            int recentBig = 0, recentSmall = 0;
-            int start = Math.max(0, history.size() - 10);
-
-            for (int i = start; i < history.size(); i++) {
-                if (history.get(i).equals("Big")) recentBig++;
-                else recentSmall++;
+            int rb=0, rs=0;
+            int start=Math.max(0,results.size()-10);
+            for(int i=start;i<results.size();i++) {
+                if(results.get(i).equals("Big")) rb++;
+                else rs++;
             }
+            String prediction;
+            if(rb>rs) prediction="Big";
+            else if(rs>rb) prediction="Small";
+            else if(big>small) prediction="Big";
+            else if(small>big) prediction="Small";
+            else prediction="স্পষ্ট দিক নেই";
 
-            String guess;
-            if (recentBig > recentSmall) {
-                guess = "Big";
-            } else if (recentSmall > recentBig) {
-                guess = "Small";
-            } else if (big > small) {
-                guess = "Big";
-            } else if (small > big) {
-                guess = "Small";
-            } else {
-                guess = "সমান";
-            }
+            guess.setText("পরবর্তী রাউন্ডের প্রধান ধারণা: "
+                + prediction
+                + "\nসাম্প্রতিক Big: "+rb
+                + " | Small: "+rs
+                + "\nএটি শুধু পরিসংখ্যানভিত্তিক ধারণা।");
 
-            if (guess.equals("সমান")) {
-                prediction.setText(
-                    "পরবর্তী ধারণা: স্পষ্ট দিক নেই"
-                    + "\nসাম্প্রতিক ফলাফল সমান");
-            } else {
-                prediction.setText(
-                    "পরবর্তী রাউন্ডের প্রধান ধারণা: " + guess
-                    + "\nসাম্প্রতিক ১০ ফলাফল: Big "
-                    + recentBig + " | Small " + recentSmall);
-            }
         }
 
-        StringBuilder sb = new StringBuilder("History:\n");
-        for (int i = history.size() - 1; i >= 0; i--) {
-            sb.append(history.get(i));
-            if (i > 0) sb.append("  →  ");
+        StringBuilder sb=new StringBuilder("History:\n");
+        for(int i=results.size()-1;i>=0;i--) {
+            sb.append(results.get(i)).append("\n");
         }
-        historyText.setText(sb.toString());
+        history.setText(sb.toString());
     }
 }
