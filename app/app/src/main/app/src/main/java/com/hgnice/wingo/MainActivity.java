@@ -1,11 +1,13 @@
 package com.hgnice.wingo;
 
 import android.app.Activity;
+import android.media.projection.MediaProjectionManager;
+import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.view.Gravity;
 import android.widget.*;
-import android.view.View;
 import java.util.ArrayList;
 
 public class MainActivity extends Activity {
@@ -13,6 +15,7 @@ public class MainActivity extends Activity {
     LinearLayout layout;
     EditText input;
     TextView history, stats;
+    static final int SCREEN_CAPTURE_REQUEST = 1001;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -31,6 +34,19 @@ public class MainActivity extends Activity {
         title.setTextColor(Color.BLACK);
         title.setGravity(Gravity.CENTER);
         layout.addView(title);
+
+        Button capture = new Button(this);
+        capture.setText("SCREEN CAPTURE");
+        layout.addView(capture);
+
+        capture.setOnClickListener(v -> {
+            MediaProjectionManager manager =
+                (MediaProjectionManager) getSystemService(
+                    Context.MEDIA_PROJECTION_SERVICE);
+            startActivityForResult(
+                manager.createScreenCaptureIntent(),
+                SCREEN_CAPTURE_REQUEST);
+        });
 
         input = new EditText(this);
         input.setHint("Enter Big or Small");
@@ -60,12 +76,13 @@ public class MainActivity extends Activity {
 
         add.setOnClickListener(v -> {
             String s = input.getText().toString().trim().toLowerCase();
-            if (s.equals("big") || s.equals("বড়") || s.equals("বড়"))
+            if (s.equals("big") || s.equals("বড়") || s.equals("বড়")) {
                 results.add("Big");
-            else if (s.equals("small") || s.equals("ছোট"))
+            } else if (s.equals("small") || s.equals("ছোট")) {
                 results.add("Small");
-            else {
-                Toast.makeText(this, "Enter Big or Small", Toast.LENGTH_SHORT).show();
+            } else {
+                Toast.makeText(this, "Enter Big or Small",
+                    Toast.LENGTH_SHORT).show();
                 return;
             }
             input.setText("");
@@ -86,17 +103,39 @@ public class MainActivity extends Activity {
         update();
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode,
+                                    Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == SCREEN_CAPTURE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                Toast.makeText(this,
+                    "Screen permission granted. Capture engine not connected yet.",
+                    Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this,
+                    "Screen capture permission denied.",
+                    Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
     void update() {
         int big = 0, small = 0;
         StringBuilder h = new StringBuilder("History (oldest first):\n");
+
         for (int i = 0; i < results.size(); i++) {
             String r = results.get(i);
-            if (r.equals("Big")) big++; else small++;
+            if (r.equals("Big")) big++;
+            else small++;
             h.append(i + 1).append(". ").append(r).append("\n");
         }
+
         stats.setText("Total: " + results.size()
-                + "\nBig: " + big + "\nSmall: " + small
-                + "\nPast results are not a reliable prediction.");
+            + "\nBig: " + big + "\nSmall: " + small
+            + "\nPast results cannot guarantee future results.");
+
         history.setText(h.toString());
     }
 }
