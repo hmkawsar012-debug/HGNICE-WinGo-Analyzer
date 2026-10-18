@@ -38,6 +38,7 @@ public class MainActivity extends Activity {
         Button capture = new Button(this);
         capture.setText("SCREEN CAPTURE");
         layout.addView(capture);
+        layout.addView(capture);
 
         capture.setOnClickListener(v -> {
             MediaProjectionManager manager =
