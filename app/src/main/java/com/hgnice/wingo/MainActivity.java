@@ -116,5 +116,10 @@ public class MainActivity extends Activity {
             sb.append(results.get(i)).append("\n");
         }
         history.setText(sb.toString());
+        @Override
+    protected void onActivityResult(
+            int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        }
     }
 }
