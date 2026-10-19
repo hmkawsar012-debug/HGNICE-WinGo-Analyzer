@@ -16,6 +16,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
 
 public class FloatingPanelService extends Service {
@@ -25,13 +26,13 @@ public class FloatingPanelService extends Service {
     private LinearLayout panel;
     private TextView info;
     private View miniButton;
-    private boolean minimized = false;
     private boolean receiverRegistered = false;
 
     private String latestOcrText = "স্ক্রিন ক্যাপচারের অপেক্ষায়";
 
     private final int cyan = Color.rgb(35, 230, 210);
     private final int dark = Color.rgb(12, 15, 27);
+    private final int white = Color.WHITE;
 
     private final BroadcastReceiver ocrReceiver =
             new BroadcastReceiver() {
@@ -49,11 +50,7 @@ public class FloatingPanelService extends Service {
                 latestOcrText = text;
 
                 if (info != null) {
-                    String display = text.length() > 700
-                            ? text.substring(0, 700) + "..."
-                            : text;
-
-                    info.setText("LIVE SCREEN TEXT\n" + display);
+                    updatePanelText();
                 }
             }
         }
@@ -75,12 +72,15 @@ public class FloatingPanelService extends Service {
 
         if (Build.VERSION.SDK_INT >= 33) {
             registerReceiver(
-                    ocrReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
+                    ocrReceiver,
+                    filter,
+                    Context.RECEIVER_NOT_EXPORTED
+            );
         } else {
             registerReceiver(ocrReceiver, filter);
         }
-        receiverRegistered = true;
 
+        receiverRegistered = true;
         showPanel();
     }
 
@@ -96,15 +96,16 @@ public class FloatingPanelService extends Service {
     private LinearLayout makeBox() {
         LinearLayout box = new LinearLayout(this);
         box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(12, 10, 12, 10);
+        box.setPadding(10, 8, 10, 8);
         box.setBackgroundColor(dark);
         return box;
     }
 
     private int overlayType() {
-        return Build.VERSION.SDK_INT >= 26
-                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
-                : WindowManager.LayoutParams.TYPE_PHONE;
+        if (Build.VERSION.SDK_INT >= 26) {
+            return WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
+        }
+        return WindowManager.LayoutParams.TYPE_PHONE;
     }
 
     private WindowManager.LayoutParams newParams() {
@@ -115,11 +116,12 @@ public class FloatingPanelService extends Service {
                         overlayType(),
                         WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
                                 | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
-                        PixelFormat.TRANSLUCENT);
+                        PixelFormat.TRANSLUCENT
+                );
 
         p.gravity = Gravity.TOP | Gravity.START;
-        p.x = 30;
-        p.y = 180;
+        p.x = 25;
+        p.y = 160;
         return p;
     }
 
@@ -130,7 +132,8 @@ public class FloatingPanelService extends Service {
         bar.setGravity(Gravity.CENTER_VERTICAL);
 
         TextView title = makeText("HGNICE WINGO", 17, cyan);
-        bar.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
+        bar.addView(title,
+                new LinearLayout.LayoutParams(0, -2, 1));
 
         Button minimize = new Button(this);
         minimize.setText("−");
@@ -142,16 +145,15 @@ public class FloatingPanelService extends Service {
 
         panel.addView(bar);
 
-        info = makeText("LIVE SCREEN TEXT\n" + latestOcrText,
-                14, Color.WHITE);
-        panel.addView(info);
+        ScrollView scroll = new ScrollView(this);
+        info = makeText("", 14, white);
+        scroll.addView(info);
 
-        TextView status = makeText(
-                "BIG / SMALL: এখনো যাচাই হয়নি\n"
-                + "Period: শনাক্ত হওয়ার অপেক্ষায়\n"
-                + "এটি নিশ্চিত ভবিষ্যদ্বাণী নয়।",
-                13, cyan);
-        panel.addView(status);
+        panel.addView(scroll,
+                new LinearLayout.LayoutParams(
+                        dp(280), dp(250)));
+
+        updatePanelText();
 
         params = newParams();
 
@@ -175,9 +177,13 @@ public class FloatingPanelService extends Service {
                         params.y = startY
                                 + (int) (event.getRawY() - downY);
 
-                        if (panel != null && panel.isAttachedToWindow()) {
+                        if (panel != null
+                                && panel.isAttachedToWindow()) {
                             wm.updateViewLayout(panel, params);
                         }
+                        return true;
+
+                    case MotionEvent.ACTION_UP:
                         return true;
                 }
                 return false;
@@ -190,6 +196,26 @@ public class FloatingPanelService extends Service {
         wm.addView(panel, params);
     }
 
+    private void updatePanelText() {
+        if (info == null) return;
+
+        String text = latestOcrText;
+
+        if (text.length() > 2500) {
+            text = text.substring(0, 2500) + "...";
+        }
+
+        info.setText(
+                "LIVE SCREEN TEXT\n\n"
+                + text
+                + "\n\n--------------------\n"
+                + "BIG / SMALL বিশ্লেষণ\n"
+                + "স্ক্রিনের লেখা শনাক্ত হওয়া মানেই "
+                + "পরবর্তী ফলাফল জানা নয়।\n"
+                + "ফলাফল নিশ্চিতভাবে অনুমান করা যায় না।"
+        );
+    }
+
     private void showMiniButton() {
         if (panel != null && panel.isAttachedToWindow()) {
             wm.removeView(panel);
@@ -197,15 +223,15 @@ public class FloatingPanelService extends Service {
 
         panel = null;
         info = null;
-        minimized = true;
 
         TextView mini = makeText("HG", 18, cyan);
         mini.setGravity(Gravity.CENTER);
         mini.setBackgroundColor(dark);
         miniButton = mini;
 
-        params.width = dp(58);
-        params.height = dp(58);
+        WindowManager.LayoutParams miniParams = newParams();
+        miniParams.width = dp(58);
+        miniParams.height = dp(58);
 
         mini.setOnTouchListener(new View.OnTouchListener() {
             private int startX, startY;
@@ -216,8 +242,8 @@ public class FloatingPanelService extends Service {
             public boolean onTouch(View v, MotionEvent event) {
                 switch (event.getAction()) {
                     case MotionEvent.ACTION_DOWN:
-                        startX = params.x;
-                        startY = params.y;
+                        startX = miniParams.x;
+                        startY = miniParams.y;
                         downX = event.getRawX();
                         downY = event.getRawY();
                         moved = false;
@@ -231,9 +257,12 @@ public class FloatingPanelService extends Service {
                             moved = true;
                         }
 
-                        params.x = startX + dx;
-                        params.y = startY + dy;
-                        wm.updateViewLayout(mini, params);
+                        miniParams.x = startX + dx;
+                        miniParams.y = startY + dy;
+
+                        if (mini.isAttachedToWindow()) {
+                            wm.updateViewLayout(mini, miniParams);
+                        }
                         return true;
 
                     case MotionEvent.ACTION_UP:
@@ -242,7 +271,6 @@ public class FloatingPanelService extends Service {
                                 wm.removeView(mini);
                             }
                             miniButton = null;
-                            minimized = false;
                             showPanel();
                         }
                         return true;
@@ -251,7 +279,7 @@ public class FloatingPanelService extends Service {
             }
         });
 
-        wm.addView(mini, params);
+        wm.addView(mini, miniParams);
     }
 
     private int dp(int value) {
@@ -266,7 +294,8 @@ public class FloatingPanelService extends Service {
                 wm.removeView(panel);
             }
 
-            if (miniButton != null && miniButton.isAttachedToWindow()) {
+            if (miniButton != null
+                    && miniButton.isAttachedToWindow()) {
                 wm.removeView(miniButton);
             }
         }
@@ -285,4 +314,4 @@ public class FloatingPanelService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-                        }
+            }
