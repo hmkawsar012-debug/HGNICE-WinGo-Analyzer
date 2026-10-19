@@ -1,10 +1,7 @@
 package com.hgnice.wingo;
 
 import android.app.Service;
-import android.content.BroadcastReceiver;
-import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.os.Build;
@@ -12,56 +9,20 @@ import android.os.IBinder;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.view.WindowManager;
+import android.widget.Button;
+import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
-
-import java.util.Locale;
+import android.widget.Toast;
 
 public class FloatingPanelService extends Service {
 
-    private WindowManager windowManager;
+    private WindowManager wm;
     private LinearLayout panel;
-    private TextView info;
-    private TextView stats;
-    private boolean receiverRegistered = false;
+    private WindowManager.LayoutParams params;
 
-    private final BroadcastReceiver textReceiver =
-            new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if (intent == null) return;
-
-            String text = intent.getStringExtra(
-                    ScreenCaptureService.OCR_EXTRA);
-
-            if (text == null || text.trim().isEmpty()) return;
-
-            info.setText("স্ক্রিন থেকে শনাক্ত করা লেখা:\n\n" + text);
-
-            String upper = text.toUpperCase(Locale.ROOT);
-            int big = countWord(upper, "BIG");
-            int small = countWord(upper, "SMALL");
-
-            stats.setText(
-                    "শনাক্ত BIG: " + big
-                    + "\nশনাক্ত SMALL: " + small
-                    + "\n\nএটি স্ক্রিনের লেখার হিসাব।"
-                    + "\nপরবর্তী ফলাফলের নিশ্চয়তা নয়।"
-            );
-        }
-    };
-
-    private int countWord(String text, String word) {
-        int count = 0;
-        java.util.regex.Matcher matcher =
-                java.util.regex.Pattern
-                .compile("\\b" + word + "\\b")
-                .matcher(text);
-
-        while (matcher.find()) count++;
-        return count;
-    }
+    private int cyan = Color.rgb(35, 230, 210);
+    private int dark = Color.rgb(15, 22, 32);
 
     @Override
     public void onCreate() {
@@ -72,94 +33,139 @@ public class FloatingPanelService extends Service {
             return;
         }
 
-        windowManager = (WindowManager)
-                getSystemService(WINDOW_SERVICE);
+        wm = (WindowManager) getSystemService(WINDOW_SERVICE);
+        showLogin();
+    }
 
-        panel = new LinearLayout(this);
-        panel.setOrientation(LinearLayout.VERTICAL);
-        panel.setPadding(20, 16, 20, 16);
-        panel.setBackgroundColor(Color.rgb(25, 25, 45));
+    private LinearLayout makePanel() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(22, 18, 22, 18);
+        box.setBackgroundColor(dark);
+        return box;
+    }
 
-        TextView title = new TextView(this);
-        title.setText("HGNICE WINGO");
-        title.setTextColor(Color.CYAN);
-        title.setTextSize(18);
-        panel.addView(title);
+    private TextView text(String value, int size, int color) {
+        TextView t = new TextView(this);
+        t.setText(value);
+        t.setTextSize(size);
+        t.setTextColor(color);
+        t.setPadding(0, 8, 0, 8);
+        return t;
+    }
 
-        ScrollView scroll = new ScrollView(this);
-
-        LinearLayout content = new LinearLayout(this);
-        content.setOrientation(LinearLayout.VERTICAL);
-
-        info = new TextView(this);
-        info.setText(
-                "LIVE SCREEN TEXT\n"
-                + "স্ক্রিন ক্যাপচারের অনুমতি দিন।\n"
-                + "তারপর এখানে শনাক্ত করা লেখা দেখা যাবে।"
-        );
-        info.setTextColor(Color.WHITE);
-        info.setTextSize(14);
-        content.addView(info);
-
-        stats = new TextView(this);
-        stats.setTextColor(Color.GREEN);
-        stats.setTextSize(14);
-        stats.setPadding(0, 12, 0, 0);
-        content.addView(stats);
-
-        scroll.addView(content);
-        panel.addView(scroll);
-
-        int overlayType;
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            overlayType =
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-        } else {
-            overlayType = WindowManager.LayoutParams.TYPE_PHONE;
+    private void displayPanel(LinearLayout view) {
+        if (panel != null && panel.isAttachedToWindow()) {
+            wm.removeView(panel);
         }
 
-        WindowManager.LayoutParams params =
-                new WindowManager.LayoutParams(
-                        WindowManager.LayoutParams.WRAP_CONTENT,
-                        WindowManager.LayoutParams.WRAP_CONTENT,
-                        overlayType,
-                        WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                        PixelFormat.TRANSLUCENT
-                );
+        panel = view;
+
+        int type = Build.VERSION.SDK_INT >= 26
+                ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+                : WindowManager.LayoutParams.TYPE_PHONE;
+
+        params = new WindowManager.LayoutParams(
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                WindowManager.LayoutParams.WRAP_CONTENT,
+                type,
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
+                PixelFormat.TRANSLUCENT
+        );
 
         params.gravity = Gravity.TOP | Gravity.END;
-        params.x = 20;
-        params.y = 150;
+        params.x = 12;
+        params.y = 160;
 
-        windowManager.addView(panel, params);
+        // ইনপুট লেখার জন্য প্যানেলকে ফোকাসযোগ্য রাখা হবে।
+        params.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
-        IntentFilter filter = new IntentFilter(
-                ScreenCaptureService.OCR_ACTION);
+        wm.addView(panel, params);
+    }
 
-        if (Build.VERSION.SDK_INT >= 33) {
-            registerReceiver(
-                    textReceiver, filter, Context.RECEIVER_NOT_EXPORTED);
-        } else {
-            registerReceiver(textReceiver, filter);
-        }
-        receiverRegistered = true;
+    private void showLogin() {
+        LinearLayout box = makePanel();
+
+        box.addView(text("HGNICE WINGO", 22, cyan));
+        box.addView(text("নিজস্ব অ্যাকাউন্টে লগইন", 15, Color.WHITE));
+
+        EditText username = new EditText(this);
+        username.setSingleLine(true);
+        username.setHint("Username তৈরি করুন");
+        username.setTextColor(Color.WHITE);
+        username.setHintTextColor(Color.LTGRAY);
+        box.addView(username);
+
+        EditText password = new EditText(this);
+        password.setSingleLine(true);
+        password.setHint("Password তৈরি করুন");
+        password.setInputType(
+                android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
+        password.setTextColor(Color.WHITE);
+        password.setHintTextColor(Color.LTGRAY);
+        box.addView(password);
+
+        Button login = new Button(this);
+        login.setText("LOGIN");
+        box.addView(login);
+
+        TextView note = text(
+                "প্রথমবার একটি Username ও Password দিন।\n"
+                + "এটি আপাতত স্থানীয় ডেমো লগইন।",
+                12, Color.LTGRAY);
+        box.addView(note);
+
+        login.setOnClickListener(v -> {
+            String u = username.getText().toString().trim();
+            String p = password.getText().toString();
+
+            if (u.isEmpty() || p.length() < 4) {
+                Toast.makeText(this,
+                        "Username দিন এবং অন্তত ৪ অক্ষরের Password দিন",
+                        Toast.LENGTH_LONG).show();
+                return;
+            }
+
+            // ডেমো: সার্ভার-ভিত্তিক অ্যাকাউন্ট যাচাই এখনো নেই।
+            showDashboard(u);
+        });
+
+        displayPanel(box);
+    }
+
+    private void showDashboard(String username) {
+        LinearLayout box = makePanel();
+
+        box.addView(text("HGNICE WINGO", 22, cyan));
+        box.addView(text("স্বাগতম, " + username, 15, Color.WHITE));
+        box.addView(text("LIVE SCREEN", 15, cyan));
+        box.addView(text(
+                "স্ক্রিন বিশ্লেষণ চালু করতে\nমূল অ্যাপ থেকে অনুমতি দিন।",
+                14, Color.WHITE));
+        box.addView(text(
+                "BIG: --     SMALL: --\n"
+                + "Period: শনাক্ত হয়নি\n"
+                + "History: অপেক্ষমাণ",
+                14, Color.GREEN));
+        box.addView(text(
+                "ফলাফল নিশ্চিতভাবে অনুমান করা যায় না।",
+                12, Color.LTGRAY));
+
+        Button logout = new Button(this);
+        logout.setText("LOG OUT");
+        box.addView(logout);
+        logout.setOnClickListener(v -> showLogin());
+
+        displayPanel(box);
     }
 
     @Override
     public void onDestroy() {
-        if (receiverRegistered) {
-            try {
-                unregisterReceiver(textReceiver);
-            } catch (Exception ignored) {
-            }
-            receiverRegistered = false;
-        }
-
-        if (windowManager != null && panel != null
+        if (wm != null && panel != null
                 && panel.isAttachedToWindow()) {
-            windowManager.removeView(panel);
+            wm.removeView(panel);
         }
-
         super.onDestroy();
     }
 
@@ -167,4 +173,4 @@ public class FloatingPanelService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-}
+            }
