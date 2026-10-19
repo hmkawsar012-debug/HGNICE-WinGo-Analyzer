@@ -8,21 +8,23 @@ import android.os.Build;
 import android.os.IBinder;
 import android.provider.Settings;
 import android.view.Gravity;
+import android.view.MotionEvent;
+import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import android.widget.Toast;
 
 public class FloatingPanelService extends Service {
 
     private WindowManager wm;
-    private LinearLayout panel;
     private WindowManager.LayoutParams params;
+    private LinearLayout panel;
+    private TextView info;
+    private boolean minimized = false;
 
-    private int cyan = Color.rgb(35, 230, 210);
-    private int dark = Color.rgb(15, 22, 32);
+    private final int cyan = Color.rgb(35, 230, 210);
+    private final int dark = Color.rgb(12, 15, 27);
 
     @Override
     public void onCreate() {
@@ -34,32 +36,58 @@ public class FloatingPanelService extends Service {
         }
 
         wm = (WindowManager) getSystemService(WINDOW_SERVICE);
-        showLogin();
+        showPanel();
     }
 
-    private LinearLayout makePanel() {
-        LinearLayout box = new LinearLayout(this);
-        box.setOrientation(LinearLayout.VERTICAL);
-        box.setPadding(22, 18, 22, 18);
-        box.setBackgroundColor(dark);
-        return box;
-    }
-
-    private TextView text(String value, int size, int color) {
+    private TextView makeText(String value, int size, int color) {
         TextView t = new TextView(this);
         t.setText(value);
         t.setTextSize(size);
         t.setTextColor(color);
-        t.setPadding(0, 8, 0, 8);
+        t.setPadding(8, 8, 8, 8);
         return t;
     }
 
-    private void displayPanel(LinearLayout view) {
-        if (panel != null && panel.isAttachedToWindow()) {
-            wm.removeView(panel);
-        }
+    private LinearLayout makeBox() {
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(12, 10, 12, 10);
+        box.setBackgroundColor(dark);
+        return box;
+    }
 
-        panel = view;
+    private void showPanel() {
+        panel = makeBox();
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+
+        TextView title = makeText("HGNICE WINGO", 17, cyan);
+        bar.addView(title, new LinearLayout.LayoutParams(
+                0, -2, 1));
+
+        Button minimize = new Button(this);
+        minimize.setText("−");
+        bar.addView(minimize);
+
+        Button close = new Button(this);
+        close.setText("×");
+        bar.addView(close);
+
+        panel.addView(bar);
+
+        info = makeText(
+                "LIVE HISTORY\n"
+                + "স্ক্রিন ক্যাপচার চালু হলে\n"
+                + "শনাক্ত করা লেখা এখানে আসবে।",
+                14, Color.WHITE);
+        panel.addView(info);
+
+        panel.addView(makeText(
+                "BIG / SMALL: অপেক্ষমাণ\n"
+                + "Period: অপেক্ষমাণ\n"
+                + "ফলাফল নিশ্চিত নয়।",
+                14, cyan));
 
         int type = Build.VERSION.SDK_INT >= 26
                 ? WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
@@ -69,95 +97,110 @@ public class FloatingPanelService extends Service {
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 WindowManager.LayoutParams.WRAP_CONTENT,
                 type,
-                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                PixelFormat.TRANSLUCENT
-        );
+                WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                        | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+                PixelFormat.TRANSLUCENT);
 
-        params.gravity = Gravity.TOP | Gravity.END;
-        params.x = 12;
-        params.y = 160;
+        params.gravity = Gravity.TOP | Gravity.START;
+        params.x = 30;
+        params.y = 180;
 
-        // ইনপুট লেখার জন্য প্যানেলকে ফোকাসযোগ্য রাখা হবে।
-        params.flags = WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
+        // শিরোনাম ধরে প্যানেল টেনে সরানো যাবে।
+        title.setOnTouchListener(new View.OnTouchListener() {
+            private int startX, startY;
+            private float downX, downY;
+
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = params.x;
+                        startY = params.y;
+                        downX = event.getRawX();
+                        downY = event.getRawY();
+                        return true;
+
+                    case MotionEvent.ACTION_MOVE:
+                        params.x = startX
+                                + (int) (event.getRawX() - downX);
+                        params.y = startY
+                                + (int) (event.getRawY() - downY);
+                        if (panel != null && panel.isAttachedToWindow()) {
+                            wm.updateViewLayout(panel, params);
+                        }
+                        return true;
+                }
+                return false;
+            }
+        });
+
+        minimize.setOnClickListener(v -> showMiniButton());
+        close.setOnClickListener(v -> stopSelf());
 
         wm.addView(panel, params);
     }
 
-    private void showLogin() {
-        LinearLayout box = makePanel();
+    private void showMiniButton() {
+        if (panel != null && panel.isAttachedToWindow()) {
+            wm.removeView(panel);
+        }
 
-        box.addView(text("HGNICE WINGO", 22, cyan));
-        box.addView(text("নিজস্ব অ্যাকাউন্টে লগইন", 15, Color.WHITE));
+        minimized = true;
 
-        EditText username = new EditText(this);
-        username.setSingleLine(true);
-        username.setHint("Username তৈরি করুন");
-        username.setTextColor(Color.WHITE);
-        username.setHintTextColor(Color.LTGRAY);
-        box.addView(username);
+        TextView mini = makeText("HG", 18, cyan);
+        mini.setGravity(Gravity.CENTER);
+        mini.setBackgroundColor(dark);
 
-        EditText password = new EditText(this);
-        password.setSingleLine(true);
-        password.setHint("Password তৈরি করুন");
-        password.setInputType(
-                android.text.InputType.TYPE_CLASS_TEXT
-                | android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD);
-        password.setTextColor(Color.WHITE);
-        password.setHintTextColor(Color.LTGRAY);
-        box.addView(password);
+        params.width = dp(58);
+        params.height = dp(58);
+        params.flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
 
-        Button login = new Button(this);
-        login.setText("LOGIN");
-        box.addView(login);
+        mini.setOnTouchListener(new View.OnTouchListener() {
+            private int startX, startY;
+            private float downX, downY;
+            private boolean moved;
 
-        TextView note = text(
-                "প্রথমবার একটি Username ও Password দিন।\n"
-                + "এটি আপাতত স্থানীয় ডেমো লগইন।",
-                12, Color.LTGRAY);
-        box.addView(note);
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                switch (event.getAction()) {
+                    case MotionEvent.ACTION_DOWN:
+                        startX = params.x;
+                        startY = params.y;
+                        downX = event.getRawX();
+                        downY = event.getRawY();
+                        moved = false;
+                        return true;
 
-        login.setOnClickListener(v -> {
-            String u = username.getText().toString().trim();
-            String p = password.getText().toString();
+                    case MotionEvent.ACTION_MOVE:
+                        int dx = (int) (event.getRawX() - downX);
+                        int dy = (int) (event.getRawY() - downY);
+                        if (Math.abs(dx) > 8 || Math.abs(dy) > 8) {
+                            moved = true;
+                        }
+                        params.x = startX + dx;
+                        params.y = startY + dy;
+                        wm.updateViewLayout(mini, params);
+                        return true;
 
-            if (u.isEmpty() || p.length() < 4) {
-                Toast.makeText(this,
-                        "Username দিন এবং অন্তত ৪ অক্ষরের Password দিন",
-                        Toast.LENGTH_LONG).show();
-                return;
+                    case MotionEvent.ACTION_UP:
+                        if (!moved) {
+                            wm.removeView(mini);
+                            minimized = false;
+                            showPanel();
+                        }
+                        return true;
+                }
+                return false;
             }
-
-            // ডেমো: সার্ভার-ভিত্তিক অ্যাকাউন্ট যাচাই এখনো নেই।
-            showDashboard(u);
         });
 
-        displayPanel(box);
+        wm.addView(mini, params);
     }
 
-    private void showDashboard(String username) {
-        LinearLayout box = makePanel();
-
-        box.addView(text("HGNICE WINGO", 22, cyan));
-        box.addView(text("স্বাগতম, " + username, 15, Color.WHITE));
-        box.addView(text("LIVE SCREEN", 15, cyan));
-        box.addView(text(
-                "স্ক্রিন বিশ্লেষণ চালু করতে\nমূল অ্যাপ থেকে অনুমতি দিন।",
-                14, Color.WHITE));
-        box.addView(text(
-                "BIG: --     SMALL: --\n"
-                + "Period: শনাক্ত হয়নি\n"
-                + "History: অপেক্ষমাণ",
-                14, Color.GREEN));
-        box.addView(text(
-                "ফলাফল নিশ্চিতভাবে অনুমান করা যায় না।",
-                12, Color.LTGRAY));
-
-        Button logout = new Button(this);
-        logout.setText("LOG OUT");
-        box.addView(logout);
-        logout.setOnClickListener(v -> showLogin());
-
-        displayPanel(box);
+    private int dp(int value) {
+        return (int) (value * getResources()
+                .getDisplayMetrics().density + 0.5f);
     }
 
     @Override
@@ -173,4 +216,4 @@ public class FloatingPanelService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-            }
+                                }
