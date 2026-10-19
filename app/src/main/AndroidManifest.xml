@@ -22,6 +22,6 @@
             android:name="com.hgnice.wingo.ScreenCaptureService"
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
-
+<uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     </application>
 </manifest>
