@@ -23,5 +23,8 @@
             android:exported="false"
             android:foregroundServiceType="mediaProjection" />
 <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+        <service
+            android:name="com.hgnice.wingo.FloatingPanelService"
+            android:exported="false" />
     </application>
 </manifest>
