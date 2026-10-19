@@ -1,13 +1,7 @@
 package com.hgnice.wingo;
 
-import android.app.Activity;
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.Service;
-import android.content.Context;
-import android.content.Intent;
-import android.content.pm.ServiceInfo;
+import android.app.*;
+import android.content.*;
 import android.graphics.Bitmap;
 import android.graphics.PixelFormat;
 import android.hardware.display.DisplayManager;
@@ -17,108 +11,101 @@ import android.media.ImageReader;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Build;
-import android.os.Handler;
 import android.os.IBinder;
-import android.os.Looper;
 import android.util.DisplayMetrics;
 import android.view.WindowManager;
 
 import com.google.mlkit.vision.common.InputImage;
 import com.google.mlkit.vision.text.TextRecognition;
-import com.google.mlkit.vision.text.TextRecognizer;
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 
 import java.nio.ByteBuffer;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ScreenCaptureService extends Service {
 
-    private static final String CHANNEL_ID = "hgnice_screen_capture";
-    public static final String OCR_ACTION =
-            "com.hgnice.wingo.OCR_TEXT";
-    public static final String OCR_EXTRA = "recognized_text";
+    public static final String ACTION_OCR_UPDATE =
+            "com.hgnice.wingo.OCR_UPDATE";
+    public static final String EXTRA_OCR_TEXT = "ocr_text";
+
+    private static final String CHANNEL_ID = "hgnice_capture";
+    private static final int NOTIFICATION_ID = 17;
 
     private MediaProjection projection;
     private VirtualDisplay virtualDisplay;
     private ImageReader imageReader;
-    private TextRecognizer recognizer;
-    private Handler handler;
-    private boolean processing = false;
-    private String lastText = "";
+    private com.google.mlkit.vision.text.TextRecognizer recognizer;
+    private final AtomicBoolean processing = new AtomicBoolean(false);
 
-    private final MediaProjection.Callback projectionCallback =
-            new MediaProjection.Callback() {
-                @Override
-                public void onStop() {
-                    releaseCapture();
-                    stopSelf();
-                }
-            };
+    private int screenWidth;
+    private int screenHeight;
+    private int density;
 
     @Override
     public void onCreate() {
         super.onCreate();
 
-        handler = new Handler(Looper.getMainLooper());
-        recognizer = TextRecognition.getClient(
-                TextRecognizerOptions.DEFAULT_OPTIONS);
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        if (Build.VERSION.SDK_INT >= 26) {
             NotificationChannel channel = new NotificationChannel(
                     CHANNEL_ID,
-                    "HGNICE Screen Capture",
-                    NotificationManager.IMPORTANCE_LOW);
-
-            NotificationManager manager =
+                    "HGNICE Screen Analysis",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            NotificationManager nm =
                     getSystemService(NotificationManager.class);
-
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            if (nm != null) nm.createNotificationChannel(channel);
         }
+
+        recognizer = TextRecognition.getClient(
+                TextRecognizerOptions.DEFAULT_OPTIONS);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        Notification notification;
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            notification = new Notification.Builder(this, CHANNEL_ID)
-                    .setContentTitle("HGNICE WinGo Analyzer")
-                    .setContentText("স্ক্রিনের লেখা শনাক্ত করার চেষ্টা চলছে")
-                    .setSmallIcon(android.R.drawable.ic_menu_view)
-                    .build();
-        } else {
-            notification = new Notification.Builder(this)
-                    .setContentTitle("HGNICE WinGo Analyzer")
-                    .setContentText("স্ক্রিন বিশ্লেষণ চলছে")
-                    .setSmallIcon(android.R.drawable.ic_menu_view)
-                    .build();
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                    1,
-                    notification,
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION);
-        } else {
-            startForeground(1, notification);
-        }
-
         if (intent == null) {
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        int resultCode = intent.getIntExtra("resultCode", 0);
-        Intent data;
+        Notification notification;
+        if (Build.VERSION.SDK_INT >= 26) {
+            notification = new Notification.Builder(this, CHANNEL_ID)
+                    .setContentTitle("HGNICE WinGo Analyzer")
+                    .setContentText("স্ক্রিনের লেখা শনাক্ত করা হচ্ছে")
+                    .setSmallIcon(android.R.drawable.ic_menu_view)
+                    .build();
+        } else {
+            notification = new Notification.Builder(this)
+                    .setContentTitle("HGNICE WinGo Analyzer")
+                    .setContentText("স্ক্রিনের লেখা শনাক্ত করা হচ্ছে")
+                    .setSmallIcon(android.R.drawable.ic_menu_view)
+                    .build();
+        }
 
+        if (Build.VERSION.SDK_INT >= 29) {
+            startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    android.content.pm.ServiceInfo
+                            .FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+            );
+        } else {
+            startForeground(NOTIFICATION_ID, notification);
+        }
+
+        if (projection != null) return START_NOT_STICKY;
+
+        int resultCode = intent.getIntExtra("resultCode", 0);
+
+        Intent data;
         if (Build.VERSION.SDK_INT >= 33) {
             data = intent.getParcelableExtra("data", Intent.class);
         } else {
             data = intent.getParcelableExtra("data");
         }
 
-        if (data == null || resultCode != Activity.RESULT_OK) {
+        if (data == null) {
+            sendText("স্ক্রিন ক্যাপচারের অনুমতি পাওয়া যায়নি।");
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -126,137 +113,146 @@ public class ScreenCaptureService extends Service {
         try {
             MediaProjectionManager manager =
                     (MediaProjectionManager) getSystemService(
-                            Context.MEDIA_PROJECTION_SERVICE);
+                            MEDIA_PROJECTION_SERVICE);
 
             projection = manager.getMediaProjection(resultCode, data);
 
             if (projection == null) {
+                sendText("স্ক্রিন ক্যাপচার শুরু করা যায়নি।");
                 stopSelf();
                 return START_NOT_STICKY;
             }
 
-            DisplayMetrics metrics = new DisplayMetrics();
-            WindowManager wm =
-                    (WindowManager) getSystemService(WINDOW_SERVICE);
-            wm.getDefaultDisplay().getRealMetrics(metrics);
+            projection.registerCallback(
+                    new MediaProjection.Callback() {
+                        @Override
+                        public void onStop() {
+                            stopCapture();
+                            stopSelf();
+                        }
+                    },
+                    null
+            );
 
-            int width = metrics.widthPixels;
-            int height = metrics.heightPixels;
-            int density = metrics.densityDpi;
-
-            imageReader = ImageReader.newInstance(
-                    width, height, PixelFormat.RGBA_8888, 2);
-
-            projection.registerCallback(projectionCallback, handler);
-
-            virtualDisplay = projection.createVirtualDisplay(
-                    "HGNICE-Screen",
-                    width,
-                    height,
-                    density,
-                    DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
-                    imageReader.getSurface(),
-                    null,
-                    handler);
-
-            imageReader.setOnImageAvailableListener(
-                    this::processLatestImage, handler);
-
+            startCapture();
         } catch (Exception e) {
+            sendText("ক্যাপচার সমস্যা: " + e.getClass().getSimpleName());
             stopSelf();
         }
 
         return START_NOT_STICKY;
     }
 
-    private void processLatestImage(ImageReader reader) {
-        if (processing) {
-            return;
-        }
+    private void startCapture() {
+        DisplayMetrics metrics = new DisplayMetrics();
+        WindowManager wm = (WindowManager)
+                getSystemService(WINDOW_SERVICE);
+        wm.getDefaultDisplay().getRealMetrics(metrics);
 
-        Image image = null;
-        Bitmap bitmap = null;
+        screenWidth = metrics.widthPixels;
+        screenHeight = metrics.heightPixels;
+        density = metrics.densityDpi;
 
-        try {
-            image = reader.acquireLatestImage();
+        imageReader = ImageReader.newInstance(
+                screenWidth, screenHeight,
+                PixelFormat.RGBA_8888, 2);
 
-            if (image == null) {
+        imageReader.setOnImageAvailableListener(reader -> {
+            Image image = null;
+
+            if (!processing.compareAndSet(false, true)) {
+                image = reader.acquireLatestImage();
+                if (image != null) image.close();
                 return;
             }
 
-            Image.Plane plane = image.getPlanes()[0];
-            ByteBuffer buffer = plane.getBuffer();
-            int pixelStride = plane.getPixelStride();
-            int rowStride = plane.getRowStride();
-            int width = image.getWidth();
-            int height = image.getHeight();
-            int paddedWidth = rowStride / pixelStride;
+            try {
+                image = reader.acquireLatestImage();
 
-            Bitmap padded = Bitmap.createBitmap(
-                    paddedWidth, height, Bitmap.Config.ARGB_8888);
+                if (image == null) {
+                    processing.set(false);
+                    return;
+                }
 
-            padded.copyPixelsFromBuffer(buffer);
-            bitmap = Bitmap.createBitmap(padded, 0, 0, width, height);
-            padded.recycle();
+                Image.Plane plane = image.getPlanes()[0];
+                ByteBuffer buffer = plane.getBuffer();
+                int pixelStride = plane.getPixelStride();
+                int rowStride = plane.getRowStride();
 
-        } catch (Exception e) {
-            if (bitmap != null) {
-                bitmap.recycle();
-            }
-        } finally {
-            if (image != null) {
+                int paddedWidth = rowStride / pixelStride;
+
+                Bitmap padded = Bitmap.createBitmap(
+                        paddedWidth, screenHeight,
+                        Bitmap.Config.ARGB_8888);
+
+                padded.copyPixelsFromBuffer(buffer);
+
+                Bitmap bitmap = Bitmap.createBitmap(
+                        padded, 0, 0, screenWidth, screenHeight);
+
+                padded.recycle();
                 image.close();
+                image = null;
+
+                InputImage input = InputImage.fromBitmap(bitmap, 0);
+
+                recognizer.process(input)
+                        .addOnSuccessListener(result -> {
+                            String text = result.getText();
+                            if (text != null && !text.trim().isEmpty()) {
+                                sendText(text);
+                            }
+                        })
+                        .addOnFailureListener(e ->
+                                sendText("স্ক্রিনের লেখা পড়া যায়নি।"))
+                        .addOnCompleteListener(task -> {
+                            bitmap.recycle();
+                            processing.set(false);
+                        });
+
+            } catch (Exception e) {
+                if (image != null) image.close();
+                processing.set(false);
+                sendText("স্ক্রিন পড়তে সমস্যা হয়েছে।");
             }
-        }
+        }, null);
 
-        if (bitmap == null) {
-            return;
-        }
+        virtualDisplay = projection.createVirtualDisplay(
+                "HGNICE_Screen",
+                screenWidth, screenHeight, density,
+                DisplayManager.VIRTUAL_DISPLAY_FLAG_AUTO_MIRROR,
+                imageReader.getSurface(),
+                null, null);
 
-        processing = true;
-        Bitmap captured = bitmap;
-
-        recognizer.process(InputImage.fromBitmap(captured, 0))
-                .addOnSuccessListener(result -> {
-                    String text = result.getText().trim();
-
-                    if (!text.isEmpty() && !text.equals(lastText)) {
-                        lastText = text;
-
-                        Intent update = new Intent(OCR_ACTION);
-                        update.setPackage(getPackageName());
-                        update.putExtra(OCR_EXTRA, text);
-                        sendBroadcast(update);
-                    }
-                })
-                .addOnCompleteListener(task -> {
-                    captured.recycle();
-                    processing = false;
-                });
+        sendText("স্ক্রিন ক্যাপচার চালু হয়েছে; লেখা শনাক্ত করা হচ্ছে।");
     }
 
-    private void releaseCapture() {
+    private void sendText(String text) {
+        Intent update = new Intent(ACTION_OCR_UPDATE);
+        update.setPackage(getPackageName());
+        update.putExtra(EXTRA_OCR_TEXT, text);
+        sendBroadcast(update);
+    }
+
+    private void stopCapture() {
+        if (virtualDisplay != null) {
+            virtualDisplay.release();
+            virtualDisplay = null;
+        }
+
         if (imageReader != null) {
-            imageReader.setOnImageAvailableListener(null, null);
             imageReader.close();
             imageReader = null;
         }
 
-        if (virtualDisplay != null) {
-            virtualDisplay.release();
-            virtualDisplay = null;
+        if (projection != null) {
+            projection = null;
         }
     }
 
     @Override
     public void onDestroy() {
-        releaseCapture();
-
-        if (projection != null) {
-            projection.unregisterCallback(projectionCallback);
-            projection.stop();
-            projection = null;
-        }
+        stopCapture();
 
         if (recognizer != null) {
             recognizer.close();
@@ -269,4 +265,4 @@ public class ScreenCaptureService extends Service {
     public IBinder onBind(Intent intent) {
         return null;
     }
-              }
+            }
