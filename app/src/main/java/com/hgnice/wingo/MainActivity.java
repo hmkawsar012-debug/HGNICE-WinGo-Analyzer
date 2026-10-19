@@ -1,11 +1,11 @@
 package com.hgnice.wingo;
 
 import android.app.Activity;
-import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
 import android.graphics.Color;
+import android.media.projection.MediaProjectionManager;
 import android.provider.Settings;
 import android.view.Gravity;
 import android.widget.*;
@@ -16,6 +16,7 @@ public class MainActivity extends Activity {
     LinearLayout page;
     EditText entry;
     TextView counts, guess, history;
+    private static final int SCREEN_CAPTURE_REQUEST = 1001;
 
     @Override
     public void onCreate(Bundle b) {
@@ -45,12 +46,24 @@ public class MainActivity extends Activity {
                 );
                 startActivity(intent);
             } else {
-                Intent serviceIntent =
-                    new Intent(this, FloatingPanelService.class);
-                startService(serviceIntent);
-                Toast.makeText(this, "প্যানেল চালু করার অনুরোধ পাঠানো হয়েছে",
+                startService(new Intent(this, FloatingPanelService.class));
+                Toast.makeText(this, "ভাসমান প্যানেল চালুর অনুরোধ পাঠানো হয়েছে",
                     Toast.LENGTH_SHORT).show();
             }
+        });
+
+        Button captureButton = new Button(this);
+        captureButton.setText("স্ক্রিন বিশ্লেষণের অনুমতি দিন");
+        page.addView(captureButton);
+
+        captureButton.setOnClickListener(v -> {
+            MediaProjectionManager manager =
+                (MediaProjectionManager) getSystemService(
+                    MEDIA_PROJECTION_SERVICE);
+            startActivityForResult(
+                manager.createScreenCaptureIntent(),
+                SCREEN_CAPTURE_REQUEST
+            );
         });
 
         entry = new EditText(this);
@@ -64,8 +77,8 @@ public class MainActivity extends Activity {
         add.setOnClickListener(v -> {
             String s = entry.getText().toString().trim();
 
-            if (s.equalsIgnoreCase("Big")
-                    || s.equalsIgnoreCase("Small")) {
+            if (s.equalsIgnoreCase("Big") ||
+                    s.equalsIgnoreCase("Small")) {
                 results.add(s.substring(0, 1).toUpperCase()
                     + s.substring(1).toLowerCase());
                 entry.setText("");
@@ -106,6 +119,34 @@ public class MainActivity extends Activity {
         refresh();
     }
 
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode,
+                                    Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == SCREEN_CAPTURE_REQUEST) {
+            if (resultCode == RESULT_OK && data != null) {
+                Intent serviceIntent =
+                    new Intent(this, ScreenCaptureService.class);
+                serviceIntent.putExtra("resultCode", resultCode);
+                serviceIntent.putExtra("data", data);
+
+                if (android.os.Build.VERSION.SDK_INT >= 26) {
+                    startForegroundService(serviceIntent);
+                } else {
+                    startService(serviceIntent);
+                }
+
+                Toast.makeText(this,
+                    "অনুমতি পাওয়া গেছে; পরের ধাপে ক্যাপচার যুক্ত হবে",
+                    Toast.LENGTH_LONG).show();
+            } else {
+                Toast.makeText(this, "স্ক্রিন অনুমতি দেওয়া হয়নি",
+                    Toast.LENGTH_SHORT).show();
+            }
+        }
+    }
+
     void refresh() {
         int big = 0, small = 0;
 
@@ -114,7 +155,7 @@ public class MainActivity extends Activity {
             else small++;
         }
 
-        counts.setText("Total: " + results.size()
+        counts.setText("মোট: " + results.size()
             + "\nBig: " + big + "\nSmall: " + small);
 
         if (results.isEmpty()) {
@@ -133,11 +174,10 @@ public class MainActivity extends Activity {
             else if (rs > rb) prediction = "Small";
             else prediction = "স্পষ্ট দিক নেই";
 
-            guess.setText("পরিসংখ্যানভিত্তিক ধারণা: "
-                + prediction
+            guess.setText("পরিসংখ্যানভিত্তিক ধারণা: " + prediction
                 + "\nসাম্প্রতিক Big: " + rb
                 + " | Small: " + rs
-                + "\nএটি নিশ্চিত ভবিষ্যদ্বাণী নয়।");
+                + "\nএটি নিশ্চিত ভবিষ্যদ্বাণী নয়।");
         }
 
         StringBuilder sb = new StringBuilder("History:\n");
@@ -146,4 +186,4 @@ public class MainActivity extends Activity {
         }
         history.setText(sb.toString());
     }
-}
+    }
